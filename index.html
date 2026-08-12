@@ -235,7 +235,8 @@
       <p>Enter your player name to join:</p>
       <input type="text" id="player-name-input" placeholder="Your Name" style="width: 80%; font-size: 1.2rem;">
       <br><br>
-      <button onclick="submitPlayerName()" style="font-size: 1.2rem; padding: 10px 30px;">Join Game</button>
+      <button id="join-btn" onclick="submitPlayerName()" style="font-size: 1.2rem; padding: 10px 30px;">Join Game</button>
+      <p id="join-status" style="font-size: 0.9rem; color: #aaa; margin-top: 10px;"></p>
     </div>
 
     <!-- Main Player Game Area -->
@@ -271,7 +272,7 @@
         </div>
       </div>
 
-      <div id="player-status-msg" style="font-size: 1.2rem; margin-top: 20px;">Waiting for host...</div>
+      <div id="player-status-msg" style="font-size: 1.2rem; margin-top: 20px;">Connected! Waiting for question...</div>
     </div>
   </div>
 
@@ -300,14 +301,16 @@
     let activeQuestion = null;
     let myPeerId = null;
     let myConnection = null;
+    let targetHostId = null;
 
     // --- INITIALIZATION ---
     window.onload = () => {
       const urlParams = new URLSearchParams(window.location.search);
       const hostId = urlParams.get('host');
       if (hostId) {
+        targetHostId = hostId;
         document.getElementById('role-screen').classList.add('hidden');
-        initPlayer(hostId);
+        document.getElementById('player-screen').classList.remove('hidden');
       }
     };
 
@@ -402,7 +405,6 @@
         });
       });
 
-      // Append Final Jeopardy
       const cleanFJCat = `"${finalJeopardyData.category.replace(/"/g, '""')}"`;
       const cleanFJQuestion = `"${finalJeopardyData.q.replace(/"/g, '""')}"`;
       const cleanFJAnswer = `"${finalJeopardyData.a.replace(/"/g, '""')}"`;
@@ -751,32 +753,42 @@
     }
 
     // --- PLAYER LOGIC ---
-    function initPlayer(hostId) {
-      document.getElementById('player-screen').classList.remove('hidden');
-
-      peer = new Peer();
-      peer.on('open', () => {
-        myConnection = peer.connect(hostId);
-        myConnection.on('data', data => handlePlayerMessages(data));
-      });
-    }
-
     function submitPlayerName() {
       const nameInput = document.getElementById('player-name-input').value.trim();
-      const name = nameInput || 'Anonymous';
+      const playerName = nameInput || 'Anonymous';
+      
+      const btn = document.getElementById('join-btn');
+      const statusText = document.getElementById('join-status');
+      btn.disabled = true;
+      statusText.innerText = "Connecting to host...";
 
-      if (myConnection && myConnection.open) {
-        myConnection.send({ type: 'SET_NAME', name: name });
-      } else if (myConnection) {
-        // If connection is still opening, wait for it
+      peer = new Peer();
+
+      peer.on('open', () => {
+        myConnection = peer.connect(targetHostId);
+
         myConnection.on('open', () => {
-          myConnection.send({ type: 'SET_NAME', name: name });
+          myConnection.send({ type: 'SET_NAME', name: playerName });
+          
+          document.getElementById('player-name-display').innerText = playerName;
+          document.getElementById('player-join-form').classList.add('hidden');
+          document.getElementById('player-game-area').classList.remove('hidden');
         });
-      }
 
-      document.getElementById('player-name-display').innerText = name;
-      document.getElementById('player-join-form').classList.add('hidden');
-      document.getElementById('player-game-area').classList.remove('hidden');
+        myConnection.on('data', data => handlePlayerMessages(data));
+
+        myConnection.on('error', err => {
+          console.error("Connection error:", err);
+          statusText.innerText = "Error connecting to host. Please check link and try again.";
+          btn.disabled = false;
+        });
+      });
+
+      peer.on('error', err => {
+        console.error("PeerJS error:", err);
+        statusText.innerText = "Network error. Please try again.";
+        btn.disabled = false;
+      });
     }
 
     function handlePlayerMessages(data) {
